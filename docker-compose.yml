@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fakelingo-db
+    environment:
+      POSTGRES_DB: fakelingo
+      POSTGRES_USER: fakelingo
+      POSTGRES_PASSWORD: fakelingo_secret_2024
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - fakelingo-net
+
+  backend:
+    build: ./backend
+    container_name: fakelingo-backend
+    environment:
+      DATABASE_URL: "postgresql://fakelingo:fakelingo_secret_2024@postgres:5432/fakelingo"
+      NODE_ENV: production
+      PORT: 3001
+    depends_on:
+      - postgres
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    networks:
+      - fakelingo-net
+
+  frontend:
+    build: ./frontend
+    container_name: fakelingo-frontend
+    environment:
+      REACT_APP_API_URL: "http://localhost:3001"
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - fakelingo-net
+
+networks:
+  fakelingo-net:
+    driver: bridge
+
+volumes:
+  pgdata:

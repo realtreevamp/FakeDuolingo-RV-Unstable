@@ -1,0 +1,725 @@
+const express = require("express");
+const cors = require("cors");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Фейк БД
+let mockUsersDatabase = [
+  {
+    id: 1,
+    username: "fuckv4mpyre",
+    password: "1234",
+    rank: "Developer",
+    xp: 0,
+    solvedTasks: [],
+    streak: 0,              // <-- ТЕКУЩИЙ СТРИК ДНЕЙ
+    lastActiveDate: null,   // <-- ДАТА ПОСЛЕДНЕЙ АКТИВНОСТИ (ГГГГ-ММ-ДД)
+  },
+  {
+    id: 2,
+    username: "Flaiw",
+    password: "1234",
+    rank: "Developer",
+    xp: 0,
+    solvedTasks: [],
+  },
+];
+
+let currentSessionUser = null;
+
+// Задания
+
+// Задание 1
+const lessonsData = {
+  // Задание 1 (Возвращаем к исходным 3 задачам)
+  "unit-1": {
+    id: "unit-1",
+    title: "Основы JavaScript",
+    tasks: [
+      {
+        id: "task-1",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Вывод данных в консоль",
+          text: "В JavaScript для отладки программ и вывода информации используется специальная встроенная команда console.log(). Любой текст внутри неё оборачивается в кавычки.",
+          codeSnippet: 'console.log("Привет, мир!");',
+        },
+        question: "Выведите в консоль приветствие 'Hello, World!':",
+        wordsPool: [
+          "console",
+          "log",
+          ".",
+          "print",
+          "(",
+          ")",
+          '"Hello, World!"',
+          ";",
+          "system",
+        ],
+        correctSequence: [
+          "console",
+          ".",
+          "log",
+          "(",
+          '"Hello, World!"',
+          ")",
+          ";",
+        ],
+        explanation:
+          'Критическая ошибка компиляции...\n\nКорректный синтаксис: console.log("Hello, World!");',
+      },
+      {
+        id: "task-2",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Примитивные типы данных",
+          text: "В JS есть несколько типов данных. Они делятся на примитивные и не примитивные.",
+          codeSnippet: "const result = 'Петя' + 25;",
+        },
+        question:
+          "Сложите строку 'Петя' и число 25, чтобы получить конкатенацию строк:",
+        wordsPool: ["'Петя'", "25", "+", "concat", "add", ";", "str", "num"],
+        correctSequence: ["'Петя'", "+", "25", ";"],
+        explanation: "Ошибка несоответствия типов (Type Mismatch)...",
+      },
+      {
+        id: "task-3",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Конструкция условий (if)",
+          text: "Условия — это конструкции, позволяющие выполнять участки кода только в том случае, если условие выполняется.",
+          codeSnippet: "if (x > 10 && x < 20) {}",
+        },
+        question:
+          "Напишите условие if, которое сработает, если x больше 10 И меньше 20:",
+        wordsPool: [
+          "if",
+          "(",
+          "x",
+          ">",
+          "10",
+          "&&",
+          "<",
+          "20",
+          "x",
+          ")",
+          "{",
+          "}",
+          "||",
+        ],
+        correctSequence: [
+          "if",
+          "(",
+          "x",
+          ">",
+          "10",
+          "&&",
+          "x",
+          "<",
+          "20",
+          ")",
+          "{",
+          "}",
+        ],
+        explanation:
+          "Сбой логического оператора (Logical Operator Exception)...",
+      },
+    ],
+  },
+
+  // Задание 2
+  // Задание 2 (Асинхронность)
+  "unit-2": {
+    id: "unit-2",
+    title: "Асинхронный JS & API",
+    tasks: [
+      {
+        id: "u2-task-1",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Синхронный vs Асинхронный код",
+          text: "JavaScript по своей природе однопоточный — он выполняет одну инструкцию за другой сверху вниз. Однако асинхронные операции (сетевые запросы, таймеры) позволяют выполнять тяжелые задачи в фоне, не блокируя основной поток выполнения.\n\nГлавное правило Event Loop: асинхронный код ВСЕГДА ждет завершения работы всего синхронного кода, даже если задержка таймера установлена в 0 миллисекунд.",
+          codeSnippet:
+            "setTimeout(() => console.log('Асинхронно'), 0);\nconsole.log('Синхронно');",
+        },
+        question:
+          "What will be printed to the console first in the code from the example above?",
+        options: [
+          { id: "ans1", text: "Синхронно" },
+          { id: "ans2", text: "Асинхронно" },
+          { id: "ans3", text: "They will be printed simultaneously" },
+        ],
+        correctOptionId: "ans1",
+      },
+      {
+        id: "u2-task-2",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Call Stack и Task Queue",
+          text: "Как это работает изнутри:\n1. Синхронные команды падают в Call Stack (стек вызовов) и выполняются мгновенно.\n2. Асинхронные задачи (например, колбэк от setTimeout) регистрируются в Web API, а затем отправляются в Task Queue (очередь задач).\n3. Event Loop (цикл событий) постоянно проверяет: если Call Stack абсолютно пуст, он берет первую задачу из Task Queue и закидывает её на выполнение.",
+          codeSnippet:
+            "// Очередь задач (Task Queue) начинает обрабатываться только после очистки Стека вызовов",
+        },
+        question:
+          "Under what condition will the Event Loop start moving asynchronous tasks from the Task Queue to the Call Stack?",
+        options: [
+          {
+            id: "q1",
+            text: "When the timer delay has expired, regardless of the rest of the code",
+          },
+          {
+            id: "q2",
+            text: "When the Call Stack is completely cleared of synchronous code",
+          },
+          { id: "q3", text: "Every 10 milliseconds in random order" },
+        ],
+        correctOptionId: "q2",
+      },
+      {
+        id: "u2-task-3",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Использование функции setTimeout",
+          text: "Функция setTimeout принимает два обязательных параметра:\n1. Колбэк-функцию (код, который нужно выполнить асинхронно).\n2. Время задержки в миллисекундах (1 секунда = 1000 мс).",
+          codeSnippet:
+            "setTimeout(() => {\n  // Код выполнится через указанное время\n}, 1000);",
+        },
+        question:
+          "Write a setTimeout function call that will execute an empty arrow function after 1000ms:",
+        wordsPool: [
+          "setTimeout",
+          "(",
+          ")",
+          "=>",
+          "{",
+          "}",
+          ",",
+          "1000",
+          ";",
+          "interval",
+          "clear",
+        ],
+        correctSequence: [
+          "setTimeout",
+          "(",
+          "(",
+          ")",
+          "=>",
+          "{",
+          "}",
+          ",",
+          "1000",
+          ")",
+          ";",
+        ],
+      },
+      {
+        id: "u2-task-4",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Прогнозирование Event Loop",
+          text: "Давайте закрепим чтение трассировки асинхронного кода на практике. Проанализируйте, в каком порядке JS выполнит эти три строки:\n\n1. console.log('A');\n2. setTimeout(() => console.log('B'), 0);\n3. console.log('C');",
+          codeSnippet:
+            "// Сначала стек выполнит синхронные 'A' и 'C', и только потом очередь отдаст 'B'",
+        },
+        question:
+          "What will be the final output order of letters in the console when running this script?",
+        options: [
+          { id: "seq1", text: "A -> B -> C" },
+          { id: "seq2", text: "A -> C -> B" },
+          { id: "seq3", text: "B -> A -> C" },
+        ],
+        correctOptionId: "seq2",
+      },
+      {
+        id: "u2-task-5",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Создание асинхронной задержки (delay)",
+          text: "В современной разработке setTimeout часто оборачивают в Promise, чтобы использовать его с удобной конструкцией async/await. Такая утилита называется функцией задержки (delay).",
+          codeSnippet:
+            "const delay = ms => new Promise(res => setTimeout(res, ms));",
+        },
+        question:
+          "Assemble the returned promise inside the delay arrow function (create a new Promise that accepts res):",
+        wordsPool: [
+          "new",
+          "Promise",
+          "(",
+          "res",
+          "=>",
+          "setTimeout",
+          "reset",
+          ")",
+          ";",
+          "function",
+        ],
+        correctSequence: [
+          "new",
+          "Promise",
+          "(",
+          "res",
+          "=>",
+          "setTimeout",
+          ")",
+          ";",
+        ],
+      },
+    ],
+  },
+
+  // === НОВАЯ ЧЕТВЕРТАЯ КОМНАТА-ПЕСОЧНИЦА ===
+  "unit-4": {
+    id: "unit-4",
+    title: "Песочница: Замыкания",
+    tasks: [
+      {
+        id: "task-closure-sandbox",
+        type: "CODE_SANDBOX",
+        theory: {
+          title: "Замыкания в JavaScript (Counter)",
+          text: "Замыкание — это способность функции запоминать лексическое окружение, в котором она была создана, даже после того, как внешняя функция завершила свою работу.",
+          codeSnippet:
+            "function createCounter() {\n  let count = 0;\n  return function() {\n    count++;\n    return count;\n  };\n}",
+        },
+        question:
+          "Допишите тело функции createCounter так, чтобы каждый её вызов увеличивал внутренний счетчик 'count' на 1 и возвращал новое значение:",
+        starterCode:
+          "function createCounter() {\n  let count = 0;\n  // Напишите ваш код ниже этой строки\n  \n}",
+        // Заменяем requiredTokens на requiredNodes (структурные требования AST)
+        requiredNodes: [
+          { type: "ReturnStatement", argumentType: "FunctionExpression" }, // Возвращает функцию (анонимную)
+          { type: "UpdateExpression", operator: "++", argumentName: "count" }, // Инкрементирует именно count
+          {
+            type: "ReturnStatement",
+            argumentType: "Identifier",
+            argumentName: "count",
+          }, // Вложенный return count
+        ],
+        explanation:
+          "Ошибка компиляции или логики замыкания.\n\nПроверьте синтаксис: вложенная функция должна быть возвращена, увеличивать 'count' через оператор инкремента (++) и возвращать результат.",
+      },
+    ],
+  },
+  "unit-ts": {
+    id: "unit-ts",
+    title: "TypeScript: Типы и интерфейсы",
+    tasks: [
+      {
+        id: "ts-task-1",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Аннотация типов",
+          text: "TypeScript добавляет типизацию поверх JavaScript. Аннотация типа ставится после имени переменной через двоеточие.",
+          codeSnippet: "let age: number = 25;",
+        },
+        question: "Соберите объявление переменной userName типа string со значением 'Neo':",
+        wordsPool: [
+          "let",
+          "userName",
+          ":",
+          "string",
+          "=",
+          "'Neo'",
+          ";",
+          "const",
+          "number",
+        ],
+        correctSequence: ["let", "userName", ":", "string", "=", "'Neo'", ";"],
+        explanation: "В TypeScript тип указывается через ':' после имени переменной.",
+      },
+      {
+        id: "ts-task-2",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Интерфейсы TypeScript",
+          text: "Интерфейсы описывают структуру объектов — какие поля они должны содержать и каких типов эти поля должны быть.",
+          codeSnippet: "interface User { name: string; age: number; }",
+        },
+        question: "Какой вариант описывает объект с полем count типа number?",
+        options: [
+          { id: "opt1", text: "interface Counter { count: string; }" },
+          { id: "opt2", text: "interface Counter { count: number; }" },
+          { id: "opt3", text: "interface Counter { count: bool; }" },
+        ],
+        correctOptionId: "opt2",
+      },
+    ],
+  },
+  "unit-python": {
+    id: "unit-python",
+    title: "Python: синтаксис и коллекции",
+    tasks: [
+      {
+        id: "py-task-1",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Вывод в консоль",
+          text: "В Python для вывода текста на экран используется функция print(). Текст в строке берется в одинарные или двойные кавычки.",
+          codeSnippet: "print('Hello, World!')",
+        },
+        question: "Соберите команду, которая выведет 'Hello, Python!' в консоль:",
+        wordsPool: ["print", "(", "'Hello, Python!'", ")", ";", "console.log", "'Hello'", "print()"],
+        correctSequence: ["print", "(", "'Hello, Python!'", ")"],
+        explanation: "В Python строка печатается через print('текст').",
+      },
+      {
+        id: "py-task-2",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Списки и кортежи",
+          text: "Список list изменяем, а кортеж tuple — нет. В Python списки создаются через квадратные скобки, кортежи — через круглые.",
+          codeSnippet: "names = ['Neo', 'Trinity', 'Morpheus']",
+        },
+        question: "Какой вариант описывает кортеж?",
+        options: [
+          { id: "py1", text: "['Neo', 'Trinity']" },
+          { id: "py2", text: "('Neo', 'Trinity')" },
+          { id: "py3", text: "{ 'Neo', 'Trinity' }" },
+        ],
+        correctOptionId: "py2",
+      },
+    ],
+  },
+  "unit-algo": {
+    id: "unit-algo",
+    title: "Алгоритмы: сложность и базовые структуры",
+    tasks: [
+      {
+        id: "algo-task-1",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Бинарный поиск",
+          text: "Бинарный поиск работает на отсортированном массиве, деля зону поиска пополам на каждом шаге.",
+          codeSnippet: "if (array[mid] === target) { return mid; }",
+        },
+        question: "Какая временная сложность у бинарного поиска?",
+        options: [
+          { id: "a1", text: "O(n)" },
+          { id: "a2", text: "O(log n)" },
+          { id: "a3", text: "O(n^2)" },
+        ],
+        correctOptionId: "a2",
+      },
+      {
+        id: "algo-task-2",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Цикл for",
+          text: "Цикл for позволяет пройтись по диапазону чисел или элементам массива. В JavaScript он выглядит как for (let i = 0; i < 5; i++).",
+          codeSnippet: "for (let i = 0; i < 5; i++) { console.log(i); }",
+        },
+        question: "Соберите цикл, который выполняется 5 раз:",
+        wordsPool: ["for", "(", "let", "i", "=", "0", ";", "i", "<", "5", ";", "i++", ")", "{", "}", "console.log(i);"],
+        correctSequence: ["for", "(", "let", "i", "=", "0", ";", "i", "<", "5", ";", "i++", ")", "{", "console.log(i);", "}"],
+        explanation: "Цикл должен начинаться с for и содержать три части разделенные ';'.",
+      },
+    ],
+  },
+  "unit-db": {
+    id: "unit-db",
+    title: "Базы данных: SQL и запросы",
+    tasks: [
+      {
+        id: "db-task-1",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Основы SQL",
+          text: "SQL используется для работы с реляционными базами данных. Команда SELECT выбирает данные из таблиц.",
+          codeSnippet: "SELECT * FROM users WHERE id = 1;",
+        },
+        question: "Какой запрос вернет все поля из таблицы users для пользователя с id 1?",
+        options: [
+          { id: "d1", text: "SELECT users FROM * WHERE id = 1;" },
+          { id: "d2", text: "SELECT * FROM users WHERE id = 1;" },
+          { id: "d3", text: "GET * FROM users WHERE id = 1;" },
+        ],
+        correctOptionId: "d2",
+      },
+      {
+        id: "db-task-2",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Фильтрация данных",
+          text: "Для фильтрации строк в SQL используется условие WHERE. Можно проверять числа, строки и логические выражения.",
+          codeSnippet: "SELECT name FROM users WHERE active = 1;",
+        },
+        question: "Соберите SQL-запрос, который выберет имя пользователя из таблицы users, если active равно 1:",
+        wordsPool: ["SELECT", "name", "FROM", "users", "WHERE", "active", "=", "1", ";", "ALL", "*"],
+        correctSequence: ["SELECT", "name", "FROM", "users", "WHERE", "active", "=", "1", ";"],
+        explanation: "Запрос должен выбирать поле name из users и использовать WHERE для фильтрации по active = 1.",
+      },
+    ],
+  },
+  "unit-arch": {
+    id: "unit-arch",
+    title: "Архитектура: шаблоны и сервисы",
+    tasks: [
+      {
+        id: "arch-task-1",
+        type: "SELECT_ONE",
+        theory: {
+          title: "Паттерн MVC",
+          text: "MVC разделяет приложение на модель (данные), вид (интерфейс) и контроллер (логика взаимодействия).",
+          codeSnippet: "Model -> View -> Controller",
+        },
+        question: "За что отвечает Controller в MVC?",
+        options: [
+          { id: "p1", text: "За хранение данных" },
+          { id: "p2", text: "За отображение интерфейса" },
+          { id: "p3", text: "За обработку пользовательского ввода и логику" },
+        ],
+        correctOptionId: "p3",
+      },
+      {
+        id: "arch-task-2",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "REST API",
+          text: "REST строится вокруг ресурсов. Общие методы: GET для чтения, POST для создания, PUT/PATCH для изменения и DELETE для удаления.",
+          codeSnippet: "GET /api/users",
+        },
+        question: "Соберите REST-запрос для получения списка пользователей:",
+        wordsPool: ["GET", "/api/users", "POST", "/api/user", "DELETE", "/users"],
+        correctSequence: ["GET", "/api/users"],
+        explanation: "GET /api/users запрашивает список пользователей по REST-стандарту.",
+      },
+    ],
+  },
+  "unit-security": {
+    id: "unit-security",
+    title: "Безопасность: XSS и SQL-инъекции",
+    tasks: [
+      {
+        id: "sec-task-1",
+        type: "SELECT_ONE",
+        theory: {
+          title: "SQL-инъекция",
+          text: "SQL-инъекция возникает, когда пользовательский ввод вставляется напрямую в SQL-запрос без безопасной экранизации.",
+          codeSnippet: "SELECT * FROM users WHERE name = '" + "{userInput}" + "'",
+        },
+        question: "Что помогает защититься от SQL-инъекции?",
+        options: [
+          { id: "s1", text: "Использование параметризованных запросов" },
+          { id: "s2", text: "Добавление комментариев в SQL" },
+          { id: "s3", text: "Сохранение паролей в текстовом виде" },
+        ],
+        correctOptionId: "s1",
+      },
+      {
+        id: "sec-task-2",
+        type: "BUILD_SENTENCE",
+        theory: {
+          title: "Очистка пользовательского ввода",
+          text: "Для защиты от XSS необходимо фильтровать и экранировать пользовательский ввод перед выводом в HTML.",
+          codeSnippet: "const safeValue = sanitize(userInput);",
+        },
+        question: "Соберите строку, которая сохраняет очищенное значение из userInput:",
+        wordsPool: ["const", "safeValue", "=", "sanitize", "(", "userInput", ")", ";", "let", "escape"],
+        correctSequence: ["const", "safeValue", "=", "sanitize", "(", "userInput", ")", ";"],
+        explanation: "Очищенный ввод сохраняется в переменной safeValue через sanitize(userInput).",
+      },
+    ],
+  },
+};
+
+// 1. ПОЛУЧИТЬ ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ СЕССИИ
+app.get("/api/user", (req, res) => {
+  if (!currentSessionUser) {
+    return res.status(401).json({ error: "Не авторизован" });
+  }
+  res.json(currentSessionUser);
+});
+
+
+// 2. РЕГИСТРАЦИЯ 
+app.post("/api/register", (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: "Заполните все поля" });
+  }
+
+  // Проверяем, свободен ли никнейм
+  const userExists = mockUsersDatabase.some(
+    (u) => u.username.toLowerCase() === username.toLowerCase(),
+  );
+  if (userExists) {
+    return res
+      .status(400)
+      .json({ error: "Пользователь с таким именем уже существует" });
+  }
+
+  const newUser = {
+    id: mockUsersDatabase.length + 1,
+    username: username.trim(),
+    password: password,
+    rank: "Junior Dev",
+    xp: 0,
+    solvedTasks: [],
+    streak: 0,              // Инициализируем стрик
+    lastActiveDate: null,   // Даты пока нет
+    avatar: "🤖",           // Выдаем дефолтную аватарку робота-хакера
+  };
+
+  // Сохраняем в массив и делаем пользователя текущей сессией
+  mockUsersDatabase.push(newUser);
+  currentSessionUser = newUser;
+
+  console.log(`[БД Заглушка] Зарегистрирован новый терминал: ${username}`);
+  res.json(newUser);
+});
+
+// 3. АВТОРИЗАЦИЯ (ВХОД)
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+
+  const user = mockUsersDatabase.find(
+    (u) => u.username === username && u.password === password,
+  );
+
+  if (!user) {
+    return res
+      .status(400)
+      .json({ error: "Неверное имя пользователя или пароль" });
+  }
+
+  currentSessionUser = user;
+  console.log(`[БД Заглушка] Вход в аккаунт: ${username}`);
+  res.json(user);
+});
+
+// 4. ВЫХОД ИЗ АККАУНТА
+app.post("/api/logout", (req, res) => {
+  currentSessionUser = null;
+  res.json({ success: true });
+});
+
+// 5. ПОЛУЧИТЬ УРОК ПО ID
+app.get("/api/lessons/:id", (req, res) => {
+  const lesson = lessonsData[req.params.id];
+  if (!lesson) return res.status(404).json({ error: "Урок не найден" });
+  res.json(lesson);
+});
+
+// 6. СОХРАНИТЬ ПРОГРЕСС И НАЧИСЛИТЬ XP И СТРИКИ
+// === 6. СОХРАНИТЬ ПРОГРЕСС И НАЧИСЛИТЬ XP И СТРИКИ ===
+app.post("/api/user/complete-lesson", (req, res) => {
+  const { roomId, xpToAdd } = req.body;
+
+  // 1. Проверяем авторизацию
+  if (!currentSessionUser) {
+    return res.status(401).json({ error: "Не авторизован" });
+  }
+
+  // 2. Находим пользователя в нашей фейк-БД
+  const userInDb = mockUsersDatabase.find(
+    (u) => u.id === currentSessionUser.id
+  );
+
+  if (!userInDb) {
+    return res.status(404).json({ error: "Пользователь не найден" });
+  }
+
+  // 3. Безопасная проверка инициализации массива пройденных задач
+  if (!userInDb.solvedTasks) {
+    userInDb.solvedTasks = [];
+  }
+
+  // 4. Записываем ID комнаты в профиль, если его там еще нет
+  if (roomId && !userInDb.solvedTasks.includes(roomId)) {
+    userInDb.solvedTasks.push(roomId);
+  }
+
+  // 5. Начисление опыта
+  userInDb.xp += xpToAdd || 250;
+
+  // 6. Обновление рангов в сети
+  if (userInDb.xp >= 500) userInDb.rank = "Elite Hacker";
+  else if (userInDb.xp >= 250) userInDb.rank = "Senior Engineer";
+
+  // 7. СТРОГОЕ ОГРАНИЧЕНИЕ СТРИКОВ: НЕ БОЛЕЕ +1 В ДЕНЬ
+  const todayStr = new Date().toISOString().split('T')[0]; 
+
+  if (!userInDb.lastActiveDate) {
+    // Первый пройденный урок на аккаунте
+    userInDb.streak = 1;
+    userInDb.lastActiveDate = todayStr;
+  } else {
+    const lastDate = new Date(userInDb.lastActiveDate);
+    const currentDate = new Date(todayStr);
+    
+    // Считаем чистую разницу в сутках
+    const diffTime = currentDate - lastDate;
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      // Вернулся на следующий день
+      userInDb.streak += 1;
+      userInDb.lastActiveDate = todayStr;
+    } else if (diffDays > 1) {
+      // Был пропуск — стрик сгорает
+      userInDb.streak = 1;
+      userInDb.lastActiveDate = todayStr;
+    }
+    // Если diffDays === 0 (повторный урок сегодня) — стрик не меняется
+  }
+
+  // 8. Синхронизируем глобальную сессию
+  currentSessionUser = userInDb;
+
+  console.log(
+    `[БД Заглушка] Комната ${roomId} пройдена кодером ${userInDb.username}. Пройденные: [${userInDb.solvedTasks.join(", ")}]. XP: ${userInDb.xp}, Стрик: ${userInDb.streak} дн.`
+  );
+  
+  // 9. Отправляем финальный ответ на фронтенд (строго один раз в самом конце!)
+  res.json(currentSessionUser);
+});
+
+// 7. ОБНОВЛЕНИЕ ДАННЫХ ПРОФИЛЯ (Имя, пароль, аватарка)
+app.post("/api/user/update", (req, res) => {
+  const { username, password, avatar } = req.body;
+
+  if (!currentSessionUser) {
+    return res.status(401).json({ error: "Не авторизован" });
+  }
+
+  const userInDb = mockUsersDatabase.find(
+    (u) => u.id === currentSessionUser.id,
+  );
+
+  if (!userInDb) {
+    return res.status(404).json({ error: "Пользователь не найден" });
+  }
+
+  if (username && username.toLowerCase() !== userInDb.username.toLowerCase()) {
+    const nameExists = mockUsersDatabase.some(
+      (u) => u.username.toLowerCase() === username.toLowerCase(),
+    );
+    if (nameExists) {
+      return res
+        .status(400)
+        .json({ error: "Это имя кодера уже занято в сети" });
+    }
+  userInDb.username = username;
+  }
+
+  if (password) userInDb.password = password;
+  if (avatar) userInDb.avatar = avatar;
+
+  currentSessionUser = userInDb;
+
+  console.log(
+    `[БД Заглушка] Профиль обновлен для ID ${userInDb.id}: ${userInDb.username}`,
+  );
+  res.json(currentSessionUser);
+}); // ← Add this closing brace if missing
+
+// ЗАПУСК СЕРВЕРА
+app.listen(5000, () => {
+  console.log(
+    "🚀 Автономный Бэкенд успешно запущен на http://localhost:5000",
+  );
+});

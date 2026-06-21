@@ -6,6 +6,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const bcrypt = require("bcryptjs");
+
+app.use(helmet());
+
+// ограничение запросов: 20 попыток за 15 минут на /api/login и /api/register
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 20,
+  message: { error: "Слишком много попыток. Подождите 15 минут." }
+});
+app.use("/api/login", authLimiter);
+app.use("/api/register", authLimiter);
+
 // постгря
 const pool = new Pool({
   connectionString:
@@ -418,6 +433,12 @@ app.post("/api/register", async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: "Заполните все поля" });
   }
+  if (username.length < 3 || username.length > 20) {
+    return res.status(400).json({ error: "Имя от 3 до 20 символов" });
+  }
+  if (password.length < 4) {
+    return res.status(400).json({ error: "Пароль минимум 4 символа" });
+  }
   try {
     const existing = await pool.query(
       "SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [username]
@@ -425,13 +446,14 @@ app.post("/api/register", async (req, res) => {
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: "Пользователь с таким именем уже существует" });
     }
+    const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
       `INSERT INTO users (username, password, rank, xp, solved_tasks, streak, last_active_date, avatar)
        VALUES ($1, $2, 'Junior Dev', 0, '[]', 0, NULL, '🤖') RETURNING *`,
-      [username.trim(), password]
+      [username.trim(), hashedPassword]
     );
     const u = result.rows[0];
-    currentSessionUser = { id: u.id, username: u.username, password: u.password };
+    currentSessionUser = { id: u.id, username: u.username };
     console.log(`[DB] Регистрация: ${u.username}`);
     res.json({
       id: u.id, username: u.username, rank: u.rank, xp: u.xp,
@@ -528,7 +550,7 @@ app.post("/api/user/complete-lesson", async (req, res) => {
   }
 });
 
-//   ОБНОВЛЕНИЕ ПРОФИЛЯ 
+//   ОБНОВЛЕНИЕ ПРОФИЛЯ
 app.post("/api/user/update", async (req, res) => {
   const { username, password, avatar } = req.body;
   if (!currentSessionUser) {
@@ -551,7 +573,12 @@ app.post("/api/user/update", async (req, res) => {
       }
       newUsername = username;
     }
-    if (password) newPassword = password;
+        if (password) {
+      if (password.length < 4) {
+        return res.status(400).json({ error: "Пароль минимум 4 символа" });
+      }
+      newPassword = await bcrypt.hash(password, 10);
+    }
     if (avatar) newAvatar = avatar;
 
     await pool.query(
@@ -591,16 +618,16 @@ const ArkadyWisdom = {
     { text: "Если заработало — не трогай. Если не заработало — перезагрузи.", author: "Закон админа" },
     { text: "Я не волшебник, я просто знаю, где лежат логи.", author: "Аркадий" },
   ],
-  
+
   getRandom() {
     const idx = Math.floor(Math.random() * this.quotes.length);
     return this.quotes[idx];
   },
-  
+
   getByAuthor(author) {
     return this.quotes.filter(q => q.author.toLowerCase().includes(author.toLowerCase()));
   },
-  
+
   getAll() {
     return this.quotes;
   }
@@ -608,17 +635,17 @@ const ArkadyWisdom = {
 
 app.get("/api/break-time", (req, res) => {
   const { author } = req.query;
-  
+
   if (author) {
     const found = ArkadyWisdom.getByAuthor(author);
     if (found.length === 0) {
-      return res.json({ 
+      return res.json({
         message: "Нет цитат от такого автора. Но ты попробуй перезагрузить — вдруг появится.",
         quote: ArkadyWisdom.getRandom()
       });
     }
     return res.json({ quotes: found, count: found.length });
   }
-  
+
   res.json({ quote: ArkadyWisdom.getRandom() });
 });

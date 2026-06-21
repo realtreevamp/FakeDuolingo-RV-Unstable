@@ -12,7 +12,7 @@
 |------|----------|
 | Бэкенд | **Flaiw-708** |
 | React-модуль для браузерной консоли | **kaldyyr** |
-| Поднятие сервера на Debian, поднятие бэкэенда, настройка СУБД и небольшой дебаг bacend части| [@rtxrtxrtx](https://github.com/rtxrtxrtx) |
+| Поднятие сервера на Debian, поднятие бэкэнда и фронта, настройка СУБД и небольшой дебаг baсkend части| [@rtxrtxrtx](https://github.com/rtxrtxrtx) |
 | Всё остальное в совокупности | [@realtreevamp](https://github.com/realtreevamp) |
 
 ## Поддержать проект
